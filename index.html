@@ -1,0 +1,242 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <title>Notícias de Futebol</title>
+
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      background: #0b1018;
+      color: white;
+      margin: 0;
+      padding: 30px;
+    }
+
+    h1 {
+      text-align: center;
+      color: #00d4ff;
+      font-size: 42px;
+      margin-bottom: 35px;
+    }
+
+    .area-busca {
+      display: flex;
+      justify-content: center;
+      gap: 12px;
+      flex-wrap: wrap;
+      margin-bottom: 25px;
+    }
+
+    input {
+      padding: 14px;
+      border-radius: 8px;
+      border: none;
+      font-size: 15px;
+      width: 260px;
+    }
+
+    button {
+      padding: 14px 22px;
+      border-radius: 8px;
+      border: none;
+      background: #00d4ff;
+      color: black;
+      font-weight: bold;
+      cursor: pointer;
+    }
+
+    button:hover {
+      background: #00a8cc;
+    }
+
+    .atalhos {
+      display: flex;
+      justify-content: center;
+      gap: 10px;
+      flex-wrap: wrap;
+      margin-bottom: 15px;
+    }
+
+    .atalhos button {
+      background: #151f2e;
+      color: white;
+      border: 1px solid #00d4ff;
+    }
+
+    .atalhos button:hover {
+      background: #00d4ff;
+      color: black;
+    }
+
+    .quantidade {
+      text-align: center;
+      margin-bottom: 35px;
+      font-size: 16px;
+    }
+
+    .quantidade select {
+      padding: 10px;
+      border-radius: 8px;
+      border: none;
+      margin-left: 8px;
+    }
+
+    #resultado {
+      max-width: 900px;
+      margin: 0 auto;
+    }
+
+    .card {
+      background: #151f2e;
+      border-radius: 14px;
+      padding: 22px;
+      margin-bottom: 25px;
+      box-shadow: 0 0 20px rgba(0,0,0,0.5);
+      max-width: 850px;
+      margin-left: auto;
+      margin-right: auto;
+    }
+
+    .card img {
+      width: 100%;
+      max-height: 350px;
+      object-fit: cover;
+      border-radius: 12px;
+      margin-bottom: 15px;
+    }
+
+    .card h2 {
+      color: white;
+      font-size: 26px;
+      margin-top: 0;
+    }
+
+    .card p {
+      color: #dcdcdc;
+      line-height: 1.5;
+      font-size: 16px;
+    }
+
+    .data {
+      color: #00d4ff;
+      font-weight: bold;
+    }
+
+    .card a {
+      display: inline-block;
+      background: #00d4ff;
+      color: black;
+      padding: 10px 15px;
+      border-radius: 8px;
+      text-decoration: none;
+      font-weight: bold;
+      margin-top: 10px;
+    }
+
+    .card a:hover {
+      background: #00a8cc;
+      transform: scale(1.03);
+    }
+
+    .mensagem {
+      text-align: center;
+      font-size: 18px;
+      color: #dcdcdc;
+    }
+  </style>
+</head>
+
+<body>
+
+  <h1>Notícias de Futebol</h1>
+
+  <div class="area-busca">
+    <input id="chave" type="password" placeholder="Cole sua API Key aqui">
+    <input id="busca" value="Neymar OR Messi OR Haaland" placeholder="Digite o tema">
+    <button onclick="buscarNoticias()">Buscar</button>
+  </div>
+
+  <div class="atalhos">
+    <button onclick="buscarRapido('Neymar')">Neymar</button>
+    <button onclick="buscarRapido('Messi')">Messi</button>
+    <button onclick="buscarRapido('Haaland')">Haaland</button>
+    <button onclick="buscarRapido('Seleção Brasileira')">Brasil</button>
+    <button onclick="buscarRapido('Copa do Mundo')">Copa do Mundo</button>
+  </div>
+
+  <div class="quantidade">
+    <label>Quantidade:</label>
+    <select id="quantidade">
+      <option value="5">5 notícias</option>
+      <option value="10">10 notícias</option>
+      <option value="20">20 notícias</option>
+    </select>
+  </div>
+
+  <div id="resultado"></div>
+
+  <script>
+    async function buscarNoticias() {
+      const chave = document.getElementById("chave").value;
+      const busca = document.getElementById("busca").value;
+      const quantidade = document.getElementById("quantidade").value;
+      const resultado = document.getElementById("resultado");
+
+      if (chave.trim() === "") {
+        resultado.innerHTML = "<p class='mensagem'>Cole sua API Key primeiro.</p>";
+        return;
+      }
+
+      if (busca.trim() === "") {
+        resultado.innerHTML = "<p class='mensagem'>Digite algum tema para buscar.</p>";
+        return;
+      }
+
+      resultado.innerHTML = "<p class='mensagem'>Carregando notícias...</p>";
+
+      const buscaFinal = `(${busca}) (futebol OR Copa OR "Copa do Mundo" OR Seleção OR "Seleção Brasileira")`;
+
+      const url = `https://api.worldnewsapi.com/search-news?text=${encodeURIComponent(buscaFinal)}&language=pt&source-countries=br&number=${quantidade}&api-key=${encodeURIComponent(chave)}`;
+
+      try {
+        const resposta = await fetch(url);
+        const dados = await resposta.json();
+
+        resultado.innerHTML = "";
+
+        if (!dados.news || dados.news.length === 0) {
+          resultado.innerHTML = "<p class='mensagem'>Nenhuma notícia encontrada.</p>";
+          return;
+        }
+
+        dados.news.forEach(noticia => {
+          resultado.innerHTML += `
+            <div class="card">
+              ${noticia.image ? `<img src="${noticia.image}" alt="" onerror="this.style.display='none'">` : ""}
+
+              <h2>${noticia.title}</h2>
+
+              <p>${noticia.text ? noticia.text.slice(0, 350) + "..." : "Sem resumo disponível."}</p>
+
+              <p class="data">Data: ${noticia.publish_date}</p>
+
+              <a href="${noticia.url}" target="_blank">Abrir notícia completa</a>
+            </div>
+          `;
+        });
+
+      } catch (erro) {
+        resultado.innerHTML = "<p class='mensagem'>Erro ao buscar notícias. Verifique sua API Key.</p>";
+        console.log(erro);
+      }
+    }
+
+    function buscarRapido(tema) {
+      document.getElementById("busca").value = tema;
+      buscarNoticias();
+    }
+  </script>
+
+</body>
+</html>
