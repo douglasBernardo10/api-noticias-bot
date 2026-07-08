@@ -1,6 +1,10 @@
 import requests
 import os
+import feedparser
+from dotenv import load_dotenv
 from datetime import datetime, timedelta, timezone
+
+load_dotenv()
 
 WORLD_NEWS_API_KEY = os.getenv("WORLD_NEWS_API_KEY")
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
@@ -61,7 +65,13 @@ def buscar_noticias():
         data_publicacao = noticia.get("publish_date", "")
 
         if data_publicacao.startswith(hoje):
-            noticias_de_hoje.append(noticia)
+            noticias_de_hoje.append({
+                "title": noticia.get("title", "Sem título"),
+                "summary": noticia.get("summary", "Sem resumo"),
+                "url": noticia.get("url", ""),
+                "publish_date": data_publicacao,
+                "source": "World News API"
+            })
         else:
             print("Ignorada por ser antiga:", data_publicacao)
 
@@ -70,6 +80,36 @@ def buscar_noticias():
     print("Notícias realmente de hoje:", len(noticias_de_hoje))
 
     return noticias_de_hoje
+
+
+def buscar_ge():
+    noticias = []
+
+    feeds = [
+        "https://ge.globo.com/rss/ge/futebol/"
+    ]
+
+    for feed_url in feeds:
+        feed = feedparser.parse(feed_url)
+
+        for item in feed.entries[:10]:
+            titulo = item.get("title", "Sem título")
+            link = item.get("link", "")
+            resumo = item.get("summary", "Sem resumo")
+            data = item.get("published", "")
+
+            if titulo and link:
+                noticias.append({
+                    "title": titulo,
+                    "summary": resumo,
+                    "url": link,
+                    "publish_date": data,
+                    "source": "ge"
+                })
+
+    print("Notícias encontradas no ge:", len(noticias))
+
+    return noticias
 
 
 def enviar_telegram(mensagem):
@@ -96,35 +136,51 @@ def montar_mensagem(noticia):
     resumo = noticia.get("summary", "Sem resumo")
     link = noticia.get("url", "")
     data = noticia.get("publish_date", "")
+    fonte = noticia.get("source", "Fonte desconhecida")
 
     mensagem = f"""🚨 NOVA NOTÍCIA DE FUTEBOL
 
 📰 {titulo}
 
-📌 {resumo}
+📌 Fonte: {fonte}
 
-🕒 {data}
+📝 {resumo}
+
+🕐 {data}
 
 🔗 {link}
 """
+
     return mensagem
 
 
 def iniciar_bot():
-    if not WORLD_NEWS_API_KEY or not TELEGRAM_BOT_TOKEN or not TELEGRAM_CHAT_ID:
-        print("Erro: alguma chave não foi configurada nos Secrets do GitHub.")
+    if not TELEGRAM_BOT_TOKEN or not TELEGRAM_CHAT_ID:
+        print("Erro: token do Telegram ou chat ID não configurado.")
         return
+
+    if not WORLD_NEWS_API_KEY:
+        print("Aviso: WORLD_NEWS_API_KEY não configurada. O bot vai usar apenas o ge.")
 
     print("Bot de notícias iniciado...")
 
     enviadas = carregar_noticias_enviadas()
-    noticias = buscar_noticias()
+
+    noticias = []
+
+    if WORLD_NEWS_API_KEY:
+        noticias += buscar_noticias()
+
+    noticias += buscar_ge()
 
     novas = 0
     repetidas = 0
 
     for noticia in noticias:
         noticia_id = noticia.get("url") or noticia.get("title")
+
+        if not noticia_id:
+            continue
 
         if noticia_id in enviadas:
             repetidas += 1
@@ -137,6 +193,9 @@ def iniciar_bot():
         enviadas.add(noticia_id)
 
         novas += 1
+
+        if novas >= 5:
+            break
 
     print(f"Novas enviadas: {novas}")
     print(f"Repetidas ignoradas: {repetidas}")
