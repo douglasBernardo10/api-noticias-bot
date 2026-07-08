@@ -1,5 +1,6 @@
-import requests
 import os
+import re
+import requests
 import feedparser
 from dotenv import load_dotenv
 from datetime import datetime, timedelta, timezone
@@ -12,8 +13,26 @@ TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 
 TEMA = "futebol"
 ARQUIVO_ENVIADAS = "noticias_enviadas.txt"
+LIMITE_ENVIOS = 5
 
 BRASILIA = timezone(timedelta(hours=-3))
+
+
+def limpar_texto(texto):
+    if not texto:
+        return "Sem resumo"
+
+    texto = re.sub(r"<.*?>", "", texto)
+    texto = texto.replace("&nbsp;", " ")
+    texto = texto.replace("&amp;", "&")
+    texto = texto.replace("&quot;", '"')
+    texto = texto.replace("&#39;", "'")
+    texto = texto.strip()
+
+    if len(texto) > 500:
+        texto = texto[:500] + "..."
+
+    return texto
 
 
 def carregar_noticias_enviadas():
@@ -27,59 +46,6 @@ def carregar_noticias_enviadas():
 def salvar_noticia_enviada(noticia_id):
     with open(ARQUIVO_ENVIADAS, "a", encoding="utf-8") as arquivo:
         arquivo.write(str(noticia_id) + "\n")
-
-
-def buscar_noticias():
-    url = "https://api.worldnewsapi.com/search-news"
-
-    agora = datetime.now(BRASILIA)
-    inicio_do_dia = agora.replace(hour=0, minute=0, second=0, microsecond=0)
-    fim_do_dia = inicio_do_dia + timedelta(days=1)
-    hoje = agora.strftime("%Y-%m-%d")
-
-    params = {
-        "api-key": WORLD_NEWS_API_KEY,
-        "text": TEMA,
-        "language": "pt",
-        "number": 20,
-        "sort": "publish-time",
-        "sort-direction": "DESC",
-        "earliest-publish-date": inicio_do_dia.strftime("%Y-%m-%d %H:%M:%S"),
-        "latest-publish-date": fim_do_dia.strftime("%Y-%m-%d %H:%M:%S")
-    }
-
-    resposta = requests.get(url, params=params)
-
-    if resposta.status_code != 200:
-        print("Erro na API de notícias:")
-        print(resposta.status_code)
-        print(resposta.text)
-        return []
-
-    dados = resposta.json()
-    todas_noticias = dados.get("news", [])
-
-    noticias_de_hoje = []
-
-    for noticia in todas_noticias:
-        data_publicacao = noticia.get("publish_date", "")
-
-        if data_publicacao.startswith(hoje):
-            noticias_de_hoje.append({
-                "title": noticia.get("title", "Sem título"),
-                "summary": noticia.get("summary", "Sem resumo"),
-                "url": noticia.get("url", ""),
-                "publish_date": data_publicacao,
-                "source": "World News API"
-            })
-        else:
-            print("Ignorada por ser antiga:", data_publicacao)
-
-    print("Data de hoje:", hoje)
-    print("Quantidade encontrada pela API:", len(todas_noticias))
-    print("Notícias realmente de hoje:", len(noticias_de_hoje))
-
-    return noticias_de_hoje
 
 
 def buscar_ge():
@@ -101,15 +67,71 @@ def buscar_ge():
             if titulo and link:
                 noticias.append({
                     "title": titulo,
-                    "summary": resumo,
+                    "summary": limpar_texto(resumo),
                     "url": link,
                     "publish_date": data,
                     "source": "ge"
                 })
 
     print("Notícias encontradas no ge:", len(noticias))
-
     return noticias
+
+
+def buscar_world_news():
+    if not WORLD_NEWS_API_KEY:
+        print("WORLD_NEWS_API_KEY não configurada. Pulando World News API.")
+        return []
+
+    url = "https://api.worldnewsapi.com/search-news"
+
+    agora = datetime.now(BRASILIA)
+    inicio_do_dia = agora.replace(hour=0, minute=0, second=0, microsecond=0)
+    fim_do_dia = inicio_do_dia + timedelta(days=1)
+    hoje = agora.strftime("%Y-%m-%d")
+
+    params = {
+        "api-key": WORLD_NEWS_API_KEY,
+        "text": TEMA,
+        "language": "pt",
+        "number": 20,
+        "sort": "publish-time",
+        "sort-direction": "DESC",
+        "earliest-publish-date": inicio_do_dia.strftime("%Y-%m-%d %H:%M:%S"),
+        "latest-publish-date": fim_do_dia.strftime("%Y-%m-%d %H:%M:%S")
+    }
+
+    resposta = requests.get(url, params=params, timeout=20)
+
+    if resposta.status_code != 200:
+        print("Erro na World News API:")
+        print(resposta.status_code)
+        print(resposta.text)
+        return []
+
+    dados = resposta.json()
+    todas_noticias = dados.get("news", [])
+
+    noticias_de_hoje = []
+
+    for noticia in todas_noticias:
+        data_publicacao = noticia.get("publish_date", "")
+
+        if data_publicacao.startswith(hoje):
+            noticias_de_hoje.append({
+                "title": noticia.get("title", "Sem título"),
+                "summary": limpar_texto(noticia.get("summary", "Sem resumo")),
+                "url": noticia.get("url", ""),
+                "publish_date": data_publicacao,
+                "source": "World News API"
+            })
+        else:
+            print("Ignorada por ser antiga:", data_publicacao)
+
+    print("Data de hoje:", hoje)
+    print("Quantidade encontrada pela API:", len(todas_noticias))
+    print("Notícias realmente de hoje:", len(noticias_de_hoje))
+
+    return noticias_de_hoje
 
 
 def enviar_telegram(mensagem):
@@ -121,7 +143,7 @@ def enviar_telegram(mensagem):
         "disable_web_page_preview": False
     }
 
-    resposta = requests.post(url, data=dados)
+    resposta = requests.post(url, data=dados, timeout=20)
 
     if resposta.status_code == 200:
         print("Notícia enviada!")
@@ -159,19 +181,17 @@ def iniciar_bot():
         print("Erro: token do Telegram ou chat ID não configurado.")
         return
 
-    if not WORLD_NEWS_API_KEY:
-        print("Aviso: WORLD_NEWS_API_KEY não configurada. O bot vai usar apenas o ge.")
-
     print("Bot de notícias iniciado...")
 
     enviadas = carregar_noticias_enviadas()
 
     noticias = []
 
-    if WORLD_NEWS_API_KEY:
-        noticias += buscar_noticias()
-
+    # Primeiro manda notícias do ge
     noticias += buscar_ge()
+
+    # Depois manda notícias da World News API
+    noticias += buscar_world_news()
 
     novas = 0
     repetidas = 0
@@ -194,7 +214,7 @@ def iniciar_bot():
 
         novas += 1
 
-        if novas >= 5:
+        if novas >= LIMITE_ENVIOS:
             break
 
     print(f"Novas enviadas: {novas}")
